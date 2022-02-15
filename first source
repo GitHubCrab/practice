@@ -1,0 +1,133 @@
+#import sys
+#!{sys.executable} -m pip install tensorflow
+#
+#import sys
+#!{sys.executable} -m pip install tensorflow-datasets
+
+
+import os
+import tensorflow_datasets as tfds
+import tensorflow as tf
+import pathlib
+
+_CITATION = """\
+@ONLINE {tfflowers,
+author = "The TensorFlow Team",
+title = "Flowers",
+month = "jan",
+year = "2019",
+url = "http://download.tensorflow.org/example_images/flower_photos.tgz" }
+"""
+
+_URL = "http://download.tensorflow.org/example_images/flower_photos.tgz"
+
+class TFFlowers(tfds.core.GeneratorBasedBuilder):
+  """Flowers dataset."""
+
+  VERSION = tfds.core.Version("3.0.1")
+
+  def _info(self):
+    return tfds.core.DatasetInfo(
+        builder=self,
+        description="A large set of images of flowers",
+        features=tfds.features.FeaturesDict({
+            "image":
+                tfds.features.Image(),
+            "label":
+                tfds.features.ClassLabel(names=[
+                    "dandelion", "daisy", "tulips", "sunflowers", "roses"
+                ]),
+        }),
+        supervised_keys=("image", "label"),
+        homepage="https://www.tensorflow.org/tutorials/load_data/images",
+        citation=_CITATION)
+
+  def _split_generators(self, dl_manager):
+        
+    data_dir = tf.keras.utils.get_file(origin=_URL,
+                                       fname='flower_photos',
+                                       untar=True,
+                                       cache_dir = "tensorflow_datasets")
+    data_dir = pathlib.Path(data_dir)
+        
+    #path_download = dl_manager.download(_URL)
+    #ExPth = "tensorflow_datasets\downloads\downl.tenso.org_examp_image_flowe_photoTFSs55Ear_4To2XDT2UOcd1b8b4KWLRk5acYPj5ZXZw.tgz"
+    #path_extract = dl_manager.extract(ExPth)
+    
+    data_dir = pathlib.Path("tensorflow_datasets/datasets/flower_photos")
+    image_count = len(list(data_dir.glob('*/*.jpg')))
+    print(image_count," images downloaded!")
+
+    
+    batch_size = 32
+    img_height = 180
+    img_width = 180
+    
+    train_ds = tf.keras.utils.image_dataset_from_directory(
+      data_dir,
+      validation_split=0.2,
+      subset="training",
+      seed=123,
+      image_size=(img_height, img_width),
+      batch_size=batch_size)
+    
+    val_ds = tf.keras.utils.image_dataset_from_directory(
+      data_dir,
+      validation_split=0.2,
+      subset="validation",
+      seed=123,
+      image_size=(img_height, img_width),
+      batch_size=batch_size)
+    
+    return [train_ds,val_ds]
+
+  def _generate_examples(self, images_dir_path):
+    """Generate flower images and labels given the image directory path.
+    Args:
+      images_dir_path: path to the directory where the images are stored.
+    Yields:
+      The image path and its corresponding label.
+    """
+    for fname, fobj in images_dir_path:
+      if fname.endswith(".jpg"):
+        image_dir, image_file = os.path.split(fname)
+        d = os.path.basename(image_dir)
+        record = {"image": fobj, "label": d.lower()}
+        yield "%s/%s" % (d, image_file), record
+
+
+ClassObject = TFFlowers()
+ClassObject._info()
+
+import tensorflow_datasets.core.download.download_manager as dl_manager
+manager = dl_manager.DownloadManager(download_dir='tensorflow_datasets\datasets')
+
+DataSets = ClassObject._split_generators(manager)
+train_ds = DataSets[0]
+val_ds = DataSets[1]
+
+class_names = train_ds.class_names
+print(class_names)
+normalization_layer = tf.keras.layers.Rescaling(1./255)
+
+import numpy as np
+normalized_ds = train_ds.map(lambda x, y: (normalization_layer(x), y))
+image_batch, labels_batch = next(iter(normalized_ds))
+first_image = image_batch[0]
+print(np.min(first_image), np.max(first_image))
+
+num_classes = 5
+model = tf.keras.Sequential([
+  tf.keras.layers.Rescaling(1./255),
+  tf.keras.layers.Conv2D(32, 3, activation='relu'),
+  tf.keras.layers.MaxPooling2D(),
+  tf.keras.layers.Flatten(),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dense(num_classes)
+])
+
+model.fit(
+  train_ds,
+  validation_data=val_ds,
+  epochs=3
+)
